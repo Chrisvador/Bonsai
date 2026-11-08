@@ -1,5 +1,5 @@
 // Hors ligne : l'app est gardée en cache ; les données viennent de Supabase (copie locale dans l'app).
-const V = 'bonsai-v4';
+const V = 'bonsai-v5';
 const SHELL = ['./', 'index.html', 'app.js', 'supabase.js', 'manifest.webmanifest', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V && k !== 'bonsai-photos').map(k => caches.delete(k)))).then(() => self.clients.claim())); });
