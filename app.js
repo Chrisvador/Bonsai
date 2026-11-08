@@ -117,6 +117,13 @@ async function renderDetail() {
   const ps = photosOf(b.id).sort((x, y) => (y.date || '').localeCompare(x.date || ''));
   const main = mainPhoto(b);
   const tr = travauxOf(b.id).filter(t => tFilter === 'tous' || t.type === tFilter);
+  const hist = tr.slice();
+  if (tFilter === 'tous') {           // photos sans travail associé : regroupées par date dans l'historique
+    const g = {};
+    ps.filter(p => !p.travail_id && p.date).forEach(p => { (g[p.date] = g[p.date] || []).push(p); });
+    Object.entries(g).forEach(([date, arr]) => hist.push({ photosOnly: true, date, ps: arr, caps: [...new Set(arr.map(p => p.legende).filter(Boolean))].join(' · ') }));
+    hist.sort((a, c) => c.date.localeCompare(a.date));
+  }
   const scrolled = $('sheet').querySelector('.panel')?.scrollTop || 0;
   const age = b.age_acquisition != null ? `${ans(b.age_acquisition)} à l'acquisition · ≈ ${ans(b.age_acquisition + yearsSince(b.date_acquisition))} aujourd'hui` : 'Non renseigné';
   const cnt = k => travauxOf(b.id).filter(t => k === 'tous' || t.type === k).length;
@@ -136,17 +143,20 @@ async function renderDetail() {
         ${b.espece ? `<div class="fact"><span>Espèce</span><strong>${esc(b.espece)}</strong></div>` : ''}
       </div>
 
-      <div class="section-title"><h3>Travaux</h3><button class="btn pri" data-act="addwork">+ Travail</button></div>
+      <div class="section-title"><h3>Historique</h3><button class="btn pri" data-act="addwork">+ Travail</button></div>
       <div class="seg" role="group" aria-label="Filtrer les travaux">
         ${['tous', 'rempotage', 'taille', 'autre'].map(k => `<button type="button" data-tf="${k}" aria-pressed="${tFilter === k}">${k === 'tous' ? 'Tous' : TYPES[k]} ${cnt(k)}</button>`).join('')}
       </div>
-      <ul class="timeline">${tr.length ? tr.map(t => {
+      <ul class="timeline">${hist.length ? hist.map(t => {
+        if (t.photosOnly) return `<li><span class="tag photo">Photos</span>
+          <div><div class="when">${fmtDate(t.date)}</div>${t.caps ? `<div class="note">${esc(t.caps)}</div>` : ''}
+          <div class="thumbs">${t.ps.map(p => `<img src="${esc(url(thumbPath(p.chemin)))}" alt="" data-photo="${p.id}" loading="lazy">`).join('')}</div></div><span></span></li>`;
         const tp = P.filter(p => p.travail_id === t.id);
         return `<li><span class="tag ${t.type}">${TYPES[t.type]}</span>
           <div><div class="when">${fmtDate(t.date)}</div>${t.note ? `<div class="note">${esc(t.note)}</div>` : ''}
           ${tp.length ? `<div class="thumbs">${tp.map(p => `<img src="${esc(url(thumbPath(p.chemin)))}" alt="" data-photo="${p.id}" loading="lazy">`).join('')}</div>` : ''}</div>
           <button class="iconbtn" data-work="${t.id}" aria-label="Modifier ce travail">✎</button></li>`;
-      }).join('') : '<li><span></span><div class="meta">Aucun travail.</div><span></span></li>'}</ul>
+      }).join('') : '<li><span></span><div class="meta">Rien pour l\'instant.</div><span></span></li>'}</ul>
 
       <div class="section-title"><h3>Photos · ${ps.length}</h3>
         <label class="btn">+ Photos<input type="file" accept="image/*" multiple hidden data-act="addphotos"></label></div>
@@ -394,7 +404,7 @@ $('acctBtn').onclick = () => {
       <div class="section-title"><h3>Photos de Bonsai Album</h3></div>
       <p class="meta">Choisissez le fichier <strong>.bdbi</strong> exporté de Bonsai Album. Les photos sont associées aux bonsaïs et aux travaux déjà repris. Le fichier reste sur cet appareil ; l'import peut être relancé sans créer de doublons. À faire de préférence depuis un ordinateur (fichier volumineux).</p>
       <p class="meta">${withPhotos} photo${withPhotos > 1 ? 's' : ''} déjà importée${withPhotos > 1 ? 's' : ''}.</p>
-      <label class="btn pri">Choisir le fichier .bdbi<input type="file" id="bdbi" accept=".bdbi,application/octet-stream,application/x-sqlite3" hidden></label>
+      <label class="btn pri">Choisir le fichier .bdbi<input type="file" id="bdbi" hidden></label>
       <div class="progress" id="impBar" hidden><i></i></div><p class="status" id="impMsg"></p>
       <div class="section-title"><h3>Session</h3></div>
       <button class="btn danger" id="logout">Se déconnecter</button>
