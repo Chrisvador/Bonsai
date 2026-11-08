@@ -98,7 +98,7 @@ function render() {
     const ph = mainPhoto(b), u = ph && url(thumbPath(ph.chemin)), lr = lastRepot(b.id);
     const age = b.age_acquisition != null ? ` · ≈ ${ans(b.age_acquisition + yearsSince(b.date_acquisition))}` : '';
     return `<button class="card" data-id="${b.id}" type="button">
-      <div class="ph">${u ? `<img src="${esc(u)}" alt="" loading="lazy">` : `<span class="ph-empty">${ICON_TREE}</span>`}
+      <div class="ph">${u ? `<img class="bg" src="${esc(u)}" alt="" aria-hidden="true" loading="lazy"><img src="${esc(u)}" alt="" loading="lazy">` : `<span class="ph-empty">${ICON_TREE}</span>`}
         <div class="badges">${b.rempotage_a_prevoir ? '<span class="badge repot">Rempotage à prévoir</span>' : ''}${b.abri_hiver ? '<span class="badge hiver">❄ Abri l\'hiver</span>' : ''}</div></div>
       <div class="body"><h3>${esc(b.nom)}</h3>
         <div class="meta">${esc(ORIGINES[b.origine] || 'Origine ?')}${b.date_acquisition ? ' · depuis ' + b.date_acquisition.slice(0, 4) : ''}${age}</div>
@@ -131,7 +131,7 @@ async function renderDetail() {
     <div class="panel-head"><button class="iconbtn" data-act="close" aria-label="Fermer"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7"/></svg></button>
       <h2>${esc(b.nom)}</h2><button class="btn" data-act="edit">Modifier</button></div>
     <div class="panel-body">
-      <div class="hero">${main ? `<img src="${esc(url(main.chemin) || url(thumbPath(main.chemin)))}" alt="${esc(b.nom)}" data-photo="${main.id}">` : `<span class="ph-empty">${ICON_TREE}</span>`}</div>
+      <div class="hero">${main ? `<img class="bg" src="${esc(url(thumbPath(main.chemin)))}" alt="" aria-hidden="true"><img src="${esc(url(main.chemin) || url(thumbPath(main.chemin)))}" alt="${esc(b.nom)}" data-photo="${main.id}">` : `<span class="ph-empty">${ICON_TREE}</span>`}</div>
       <div class="toggle-row">
         <label class="switch ${b.rempotage_a_prevoir ? 'on' : ''}"><input type="checkbox" data-act="repot" ${b.rempotage_a_prevoir ? 'checked' : ''}><span><strong>Rempotage à prévoir</strong><br><span class="meta">${lastRepot(b.id) ? 'Dernier : ' + fmtDate(lastRepot(b.id)) : 'Aucun rempotage noté'}</span></span></label>
         <label class="switch hiver ${b.abri_hiver ? 'on' : ''}"><input type="checkbox" data-act="hiver" ${b.abri_hiver ? 'checked' : ''}><span><strong>À mettre à l'abri l'hiver</strong><br><span class="meta">${b.abri_hiver ? 'Oui' : 'Non, reste dehors'}</span></span></label>
