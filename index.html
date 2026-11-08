@@ -83,6 +83,7 @@ select.sort{border:1px solid var(--line);background:var(--paper);border-radius:9
 .badge{font-size:12px;font-weight:700;border-radius:999px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .badge.repot{background:var(--clay);color:#fff}
 .badge.hiver{background:var(--frost-soft);color:var(--frost)}
+.badge.terre{background:#6b4f2a;color:#fff}
 .card .body{padding:12px 14px 14px}
 .card h3{font-size:19px;margin-bottom:2px}
 .meta{color:var(--muted);font-size:14px}
@@ -110,6 +111,7 @@ select.sort{border:1px solid var(--line);background:var(--paper);border-radius:9
 .switch.on{border-color:var(--clay);background:var(--clay-soft)}
 .switch.hiver input{accent-color:var(--frost)}
 .switch.hiver.on{border-color:var(--frost);background:var(--frost-soft)}
+.culture{display:flex;align-items:center;gap:12px;background:var(--paper);border-radius:12px;padding:10px 14px;flex:1;min-width:230px;flex-wrap:wrap}
 .section-title{display:flex;align-items:center;gap:8px;margin:22px 0 10px}
 .section-title h3{font-size:20px;flex:1}
 .notes{white-space:pre-wrap;background:var(--paper);border-radius:12px;padding:12px 14px;font-size:15px}
@@ -202,6 +204,8 @@ form.f{display:grid;gap:12px}
     <button class="chip" data-f="tous" aria-pressed="true">Tous <b id="nAll">0</b></button>
     <button class="chip repot" data-f="repot" aria-pressed="false">Rempotage à prévoir <b id="nRepot">0</b></button>
     <button class="chip" data-f="hiver" aria-pressed="false">Abri l'hiver <b id="nHiver">0</b></button>
+    <button class="chip" data-f="pot" aria-pressed="false">En pot <b id="nPot">0</b></button>
+    <button class="chip" data-f="terre" aria-pressed="false">Pleine terre <b id="nTerre">0</b></button>
     <input class="search" id="q" type="search" placeholder="Rechercher…" aria-label="Rechercher un bonsaï">
     <select class="sort" id="sort" aria-label="Trier">
       <option value="nom">Nom</option>

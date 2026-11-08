@@ -14,6 +14,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xx
 const today = () => new Date().toLocaleDateString('sv-SE');
 
 const ORIGINES = { yamadori: 'Yamadori', echange_club: 'Échange club', jardinerie: 'Jardinerie', autre: 'Autre' };
+const CULTURES = { pot: 'En pot', pleine_terre: 'Pleine terre' };
 const TYPES = { rempotage: 'Rempotage', taille: 'Taille', autre: 'Autre' };
 const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const fmtDate = d => { if (!d) return '—'; const [y, m, j] = d.split('-').map(Number); return `${j} ${MOIS[m - 1]} ${y}`; };
@@ -79,12 +80,14 @@ function render() {
   $('nAll').textContent = B.length;
   $('nRepot').textContent = B.filter(b => b.rempotage_a_prevoir).length;
   $('nHiver').textContent = B.filter(b => b.abri_hiver).length;
+  $('nPot').textContent = B.filter(b => b.culture !== 'pleine_terre').length;
+  $('nTerre').textContent = B.filter(b => b.culture === 'pleine_terre').length;
   $('sub').textContent = `${B.length} arbre${B.length > 1 ? 's' : ''} · ${T.length} travaux`;
   document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.f === filter));
   $('sort').value = sortBy;
   const q = query.trim().toLowerCase();
-  let list = B.filter(b => (filter === 'repot' ? b.rempotage_a_prevoir : filter === 'hiver' ? b.abri_hiver : true)
-    && (!q || [b.nom, b.espece, b.origine_detail, ORIGINES[b.origine]].some(v => v && v.toLowerCase().includes(q))));
+  let list = B.filter(b => (filter === 'repot' ? b.rempotage_a_prevoir : filter === 'hiver' ? b.abri_hiver : filter === 'pot' ? b.culture !== 'pleine_terre' : filter === 'terre' ? b.culture === 'pleine_terre' : true)
+    && (!q || [b.nom, b.espece, b.origine_detail, ORIGINES[b.origine], CULTURES[b.culture]].some(v => v && v.toLowerCase().includes(q))));
   const coll = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
   list.sort(sortBy === 'acq' ? (a, b) => (a.date_acquisition || '9').localeCompare(b.date_acquisition || '9')
     : sortBy === 'repot' ? (a, b) => (lastRepot(a.id) || '0').localeCompare(lastRepot(b.id) || '0')
@@ -99,7 +102,7 @@ function render() {
     const age = b.age_acquisition != null ? ` · ≈ ${ans(b.age_acquisition + yearsSince(b.date_acquisition))}` : '';
     return `<button class="card" data-id="${b.id}" type="button">
       <div class="ph">${u ? `<img class="bg" src="${esc(u)}" alt="" aria-hidden="true" loading="lazy"><img src="${esc(u)}" alt="" loading="lazy">` : `<span class="ph-empty">${ICON_TREE}</span>`}
-        <div class="badges">${b.rempotage_a_prevoir ? '<span class="badge repot">Rempotage à prévoir</span>' : ''}${b.abri_hiver ? '<span class="badge hiver">❄ Abri l\'hiver</span>' : ''}</div></div>
+        <div class="badges">${b.rempotage_a_prevoir ? '<span class="badge repot">Rempotage à prévoir</span>' : ''}${b.abri_hiver ? '<span class="badge hiver">❄ Abri l\'hiver</span>' : ''}${b.culture === 'pleine_terre' ? '<span class="badge terre">Pleine terre</span>' : ''}</div></div>
       <div class="body"><h3>${esc(b.nom)}</h3>
         <div class="meta">${esc(ORIGINES[b.origine] || 'Origine ?')}${b.date_acquisition ? ' · depuis ' + b.date_acquisition.slice(0, 4) : ''}${age}</div>
         <div class="meta">${lr ? 'Dernier rempotage : ' + fmtDate(lr) : 'Jamais rempoté ici'}</div></div>
@@ -135,6 +138,7 @@ async function renderDetail() {
       <div class="toggle-row">
         <label class="switch ${b.rempotage_a_prevoir ? 'on' : ''}"><input type="checkbox" data-act="repot" ${b.rempotage_a_prevoir ? 'checked' : ''}><span><strong>Rempotage à prévoir</strong><br><span class="meta">${lastRepot(b.id) ? 'Dernier : ' + fmtDate(lastRepot(b.id)) : 'Aucun rempotage noté'}</span></span></label>
         <label class="switch hiver ${b.abri_hiver ? 'on' : ''}"><input type="checkbox" data-act="hiver" ${b.abri_hiver ? 'checked' : ''}><span><strong>À mettre à l'abri l'hiver</strong><br><span class="meta">${b.abri_hiver ? 'Oui' : 'Non, reste dehors'}</span></span></label>
+        <div class="culture"><strong>Culture</strong><div class="seg" role="group" aria-label="Culture">${Object.entries(CULTURES).map(([k, v]) => `<button type="button" data-cult="${k}" aria-pressed="${(b.culture || 'pot') === k}">${v}</button>`).join('')}</div></div>
       </div>
       <div class="facts">
         <div class="fact"><span>Acquisition</span><strong>${fmtDate(b.date_acquisition)}</strong></div>
@@ -194,6 +198,7 @@ function bonsaiForm(b) {
         <label class="field"><span>Origine</span><select name="origine"><option value="">—</option>${Object.entries(ORIGINES).map(([k, v]) => `<option value="${k}" ${b.origine === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="field"><span>Précision (lieu, personne…)</span><input name="origine_detail" value="${esc(b.origine_detail || '')}"></label>
       </div>
+      <label class="field"><span>Culture</span><select name="culture">${Object.entries(CULTURES).map(([k, v]) => `<option value="${k}" ${(b.culture || 'pot') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="switch hiver ${b.abri_hiver ? 'on' : ''}"><input type="checkbox" name="abri_hiver" ${b.abri_hiver ? 'checked' : ''}><strong>À mettre à l'abri l'hiver</strong></label>
       <label class="switch ${b.rempotage_a_prevoir ? 'on' : ''}"><input type="checkbox" name="rempotage_a_prevoir" ${b.rempotage_a_prevoir ? 'checked' : ''}><strong>Rempotage à prévoir</strong></label>
       <label class="field"><span>Notes</span><textarea name="notes">${esc(b.notes || '')}</textarea></label>
@@ -213,7 +218,7 @@ function bonsaiForm(b) {
       date_acquisition: fd.get('date_acquisition') || null,
       age_acquisition: age === '' ? null : Math.round(Number(age)),
       origine: fd.get('origine') || null, origine_detail: fd.get('origine_detail').trim() || null,
-      abri_hiver: !!fd.get('abri_hiver'), rempotage_a_prevoir: !!fd.get('rempotage_a_prevoir'),
+      culture: fd.get('culture') || 'pot', abri_hiver: !!fd.get('abri_hiver'), rempotage_a_prevoir: !!fd.get('rempotage_a_prevoir'),
       notes: fd.get('notes').trim() || null
     };
     if (!row.nom) { $('bErr').textContent = 'Le nom est obligatoire.'; return; }
@@ -359,7 +364,8 @@ document.addEventListener('keydown', e => {
 /* ---------- interactions de la fiche ---------- */
 $('sheet').addEventListener('click', async e => {
   if (e.target === $('sheet')) { closeSheet(); return; }
-  const el = e.target.closest('[data-act],[data-photo],[data-work],[data-tf]'); if (!el) return;
+  const el = e.target.closest('[data-act],[data-photo],[data-work],[data-tf],[data-cult]'); if (!el) return;
+  if (el.dataset.cult) { patchBonsai(openId, { culture: el.dataset.cult }); return; }
   if (el.dataset.photo) { openViewer(el.dataset.photo); return; }
   if (el.dataset.work) { const t = T.find(x => x.id === el.dataset.work); workForm(t.bonsai_id, t); return; }
   if (el.dataset.tf) { tFilter = el.dataset.tf; renderDetail(); return; }
