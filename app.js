@@ -76,8 +76,83 @@ function mainPhoto(b) {
 const lastTaille = id => { const r = T.filter(t => t.bonsai_id === id && t.type === 'taille').map(t => t.date).sort(); return r[r.length - 1] || null; };
 const lastRepot = id => { const r = T.filter(t => t.bonsai_id === id && t.type === 'rempotage').map(t => t.date).sort(); return r[r.length - 1] || null; };
 
+/* ---------- météo (Open-Meteo, sans clé) ---------- */
+const DEF_LIEU = { lat: 48.529, lon: 7.715, nom: 'Illkirch-Graffenstaden' };
+const DEF_SEUILS = { gelSensibles: 0, gelPots: -5, vent: 60 };
+let lieu = lsg('bz-lieu', DEF_LIEU), seuils = { ...DEF_SEUILS, ...lsg('bz-seuils', {}) };
+let meteo = lsg('bz-meteo', null);           // { t: horodatage, d: réponse Open-Meteo, k: clé du lieu }
+const WMO = c => c === 0 ? ['☀️', 'Ensoleillé'] : c <= 2 ? ['🌤️', 'Éclaircies'] : c === 3 ? ['☁️', 'Couvert'] : c <= 48 ? ['🌫️', 'Brouillard']
+  : c <= 57 ? ['🌦️', 'Bruine'] : c <= 67 ? ['🌧️', 'Pluie'] : c <= 77 ? ['🌨️', 'Neige'] : c <= 82 ? ['🌧️', 'Averses'] : c <= 86 ? ['🌨️', 'Averses de neige'] : ['⛈️', 'Orage'];
+const JOURS = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+const deg = v => String(Math.round(v)).replace('-', '−') + ' °C';
+const quand = iso => { const d = new Date(iso), n = new Date(), dm = new Date(n.getTime() + 864e5);
+  const j = d.toDateString() === n.toDateString() ? "aujourd'hui" : d.toDateString() === dm.toDateString() ? 'demain' : JOURS[d.getDay()];
+  return `${j} vers ${d.getHours()} h`; };
+
+async function chargerMeteo(force) {
+  const k = lieu.lat.toFixed(2) + ',' + lieu.lon.toFixed(2);
+  if (!force && meteo && meteo.k === k && Date.now() - meteo.t < 30 * 60e3) { peindreMeteo(); return; }
+  try {
+    const u = `https://api.open-meteo.com/v1/forecast?latitude=${lieu.lat}&longitude=${lieu.lon}&timezone=Europe%2FParis&forecast_days=4&wind_speed_unit=kmh`
+      + '&current=temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m&hourly=temperature_2m,wind_gusts_10m'
+      + '&daily=weather_code,temperature_2m_min,temperature_2m_max,wind_gusts_10m_max';
+    const r = await fetch(u); if (!r.ok) throw new Error('HTTP ' + r.status);
+    meteo = { t: Date.now(), d: await r.json(), k }; lss('bz-meteo', meteo);
+  } catch (e) { console.warn('météo', e); }
+  peindreMeteo();
+}
+// Prévision sur les 48 prochaines heures : température mini et rafale maxi, avec l'heure
+function risques48() {
+  if (!meteo) return null;
+  const h = meteo.d.hourly, now = Date.now(); let tMin = null, gMax = null;
+  h.time.forEach((t, i) => { const ts = new Date(t).getTime(); if (ts < now - 3600e3 || ts > now + 48 * 3600e3) return;
+    if (!tMin || h.temperature_2m[i] < tMin.v) tMin = { v: h.temperature_2m[i], t };
+    if (!gMax || h.wind_gusts_10m[i] > gMax.v) gMax = { v: h.wind_gusts_10m[i], t }; });
+  return { tMin, gMax };
+}
+// Alertes pour un arbre : gel (sensibles à 0 °C, tous les pots à −5 °C), vent fort (arbres en pot)
+function alertesArbre(b) {
+  const r = risques48(); if (!r || !r.tMin) return [];
+  const out = [], enPot = b.culture !== 'pleine_terre';
+  if ((b.abri_hiver && r.tMin.v <= seuils.gelSensibles) || (enPot && r.tMin.v <= seuils.gelPots))
+    out.push({ k: 'gel', court: '❄ Gel ' + deg(r.tMin.v), long: `Gel prévu ${quand(r.tMin.t)} : ${deg(r.tMin.v)}. ${b.abri_hiver ? 'Arbre sensible : à rentrer à l\'abri.' : 'Protéger le pot (racines) ou rentrer l\'arbre.'}` });
+  if (enPot && r.gMax && r.gMax.v >= seuils.vent)
+    out.push({ k: 'vent', court: '💨 Vent ' + Math.round(r.gMax.v) + ' km/h', long: `Rafales jusqu'à ${Math.round(r.gMax.v)} km/h ${quand(r.gMax.t)} : caler ou attacher le pot, éloigner du bord.` });
+  return out;
+}
+const arbresEnAlerte = () => B.filter(b => alertesArbre(b).length);
+function pastille() {
+  const n = arbresEnAlerte().length;
+  try { if ('setAppBadge' in navigator) n ? navigator.setAppBadge(n) : navigator.clearAppBadge(); } catch {}
+}
+function peindreMeteo() {
+  const el = $('meteo'); if (!el) return;
+  if (!meteo) { el.hidden = true; return; }
+  const c = meteo.d.current, d = meteo.d.daily, [ico, lib] = WMO(c.weather_code), r = risques48(), alerte = arbresEnAlerte();
+  const parts = [];
+  if (r && r.tMin && alerte.some(b => alertesArbre(b).some(a => a.k === 'gel'))) parts.push(`gel ${deg(r.tMin.v)} ${quand(r.tMin.t)}`);
+  if (r && r.gMax && alerte.some(b => alertesArbre(b).some(a => a.k === 'vent'))) parts.push(`rafales ${Math.round(r.gMax.v)} km/h ${quand(r.gMax.t)}`);
+  el.innerHTML = `<div class="m-now"><span class="m-ico" aria-hidden="true">${ico}</span><div><strong>${deg(c.temperature_2m)}</strong> · ${lib}<div class="meta">${esc(lieu.nom)} · vent ${Math.round(c.wind_speed_10m)} km/h, rafales ${Math.round(c.wind_gusts_10m)} km/h</div></div></div>
+    <div class="m-days">${d.time.slice(0, 4).map((t, i) => `<div class="m-day"><span>${i ? JOURS[new Date(t).getDay()] : "Auj."}</span><b aria-hidden="true">${WMO(d.weather_code[i])[0]}</b><span><strong>${Math.round(d.temperature_2m_max[i])}°</strong> <span class="${d.temperature_2m_min[i] <= 0 ? 'froid' : 'meta'}">${String(Math.round(d.temperature_2m_min[i])).replace('-', '−')}°</span></span></div>`).join('')}</div>
+    ${alerte.length ? `<button class="m-alert" type="button" data-f="alerte"><strong>⚠ Alerte ${parts.join(' et ')}</strong> · ${alerte.length} bonsaï${alerte.length > 1 ? 's' : ''} concerné${alerte.length > 1 ? 's' : ''} — voir</button>` : ''}`;
+  el.hidden = false;
+  const chip = document.querySelector('.chip[data-f=alerte]'); chip.hidden = !alerte.length; $('nAlerte').textContent = alerte.length;
+  if (!alerte.length && filter === 'alerte') { filter = 'tous'; }
+  pastille();
+}
+async function utiliserMaPosition() {
+  return new Promise(res => {
+    if (!navigator.geolocation) return res(false);
+    navigator.geolocation.getCurrentPosition(async p => {
+      lieu = { lat: +p.coords.latitude.toFixed(3), lon: +p.coords.longitude.toFixed(3), nom: 'Ma position' };
+      lss('bz-lieu', lieu); await chargerMeteo(true); render(); res(true);
+    }, () => res(false), { timeout: 15000, maximumAge: 3600e3 });
+  });
+}
+
 /* ---------- liste ---------- */
 function render() {
+  peindreMeteo();
   $('nAll').textContent = B.length;
   $('nRepot').textContent = B.filter(b => b.rempotage_a_prevoir).length;
   $('nTaille').textContent = B.filter(b => b.taille_a_prevoir).length;
@@ -88,7 +163,7 @@ function render() {
   document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.f === filter));
   $('sort').value = sortBy;
   const q = query.trim().toLowerCase();
-  let list = B.filter(b => (filter === 'repot' ? b.rempotage_a_prevoir : filter === 'taille' ? b.taille_a_prevoir : filter === 'hiver' ? b.abri_hiver : filter === 'pot' ? b.culture !== 'pleine_terre' : filter === 'terre' ? b.culture === 'pleine_terre' : true)
+  let list = B.filter(b => (filter === 'alerte' ? alertesArbre(b).length > 0 : filter === 'repot' ? b.rempotage_a_prevoir : filter === 'taille' ? b.taille_a_prevoir : filter === 'hiver' ? b.abri_hiver : filter === 'pot' ? b.culture !== 'pleine_terre' : filter === 'terre' ? b.culture === 'pleine_terre' : true)
     && (!q || [b.nom, b.espece, b.origine_detail, ORIGINES[b.origine], CULTURES[b.culture]].some(v => v && v.toLowerCase().includes(q))));
   const coll = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
   list.sort(sortBy === 'acq' ? (a, b) => (a.date_acquisition || '9').localeCompare(b.date_acquisition || '9')
@@ -105,7 +180,7 @@ function render() {
     const age = b.age_acquisition != null ? ` · ≈ ${ans(b.age_acquisition + yearsSince(b.date_acquisition))}` : '';
     return `<button class="card" data-id="${b.id}" type="button">
       <div class="ph">${u ? `<img class="bg" src="${esc(u)}" alt="" aria-hidden="true" loading="lazy"><img src="${esc(u)}" alt="" loading="lazy">` : `<span class="ph-empty">${ICON_TREE}</span>`}
-        <div class="badges">${b.rempotage_a_prevoir ? '<span class="badge repot">Rempotage à prévoir</span>' : ''}${b.taille_a_prevoir ? '<span class="badge taille">Taille à prévoir</span>' : ''}${b.abri_hiver ? '<span class="badge hiver">❄ Abri l\'hiver</span>' : ''}${b.culture === 'pleine_terre' ? '<span class="badge terre">Pleine terre</span>' : ''}</div></div>
+        <div class="badges">${alertesArbre(b).map(a => `<span class="badge ${a.k}">${a.court}</span>`).join('')}${b.rempotage_a_prevoir ? '<span class="badge repot">Rempotage à prévoir</span>' : ''}${b.taille_a_prevoir ? '<span class="badge taille">Taille à prévoir</span>' : ''}${b.abri_hiver ? '<span class="badge hiver">❄ Abri l\'hiver</span>' : ''}${b.culture === 'pleine_terre' ? '<span class="badge terre">Pleine terre</span>' : ''}</div></div>
       <div class="body"><h3>${esc(b.nom)}</h3>
         <div class="meta">${esc(ORIGINES[b.origine] || 'Origine ?')}${b.date_acquisition ? ' · depuis ' + b.date_acquisition.slice(0, 4) : ''}${age}</div>
         <div class="meta">${lr ? 'Dernier rempotage : ' + fmtDate(lr) : 'Jamais rempoté ici'}</div></div>
@@ -138,6 +213,7 @@ async function renderDetail() {
       <h2>${esc(b.nom)}</h2><button class="btn" data-act="edit">Modifier</button></div>
     <div class="panel-body">
       <div class="hero">${main ? `<img class="bg" src="${esc(url(thumbPath(main.chemin)))}" alt="" aria-hidden="true"><img src="${esc(url(main.chemin) || url(thumbPath(main.chemin)))}" alt="${esc(b.nom)}" data-photo="${main.id}">` : `<span class="ph-empty">${ICON_TREE}</span>`}</div>
+      ${alertesArbre(b).map(a => `<div class="alerte ${a.k}" role="alert">${esc(a.long)}</div>`).join('')}
       <div class="toggle-row">
         <label class="switch ${b.rempotage_a_prevoir ? 'on' : ''}"><input type="checkbox" data-act="repot" ${b.rempotage_a_prevoir ? 'checked' : ''}><span><strong>Rempotage à prévoir</strong><br><span class="meta">${lastRepot(b.id) ? 'Dernier : ' + fmtDate(lastRepot(b.id)) : 'Aucun rempotage noté'}</span></span></label>
         <label class="switch taille ${b.taille_a_prevoir ? 'on' : ''}"><input type="checkbox" data-act="taille" ${b.taille_a_prevoir ? 'checked' : ''}><span><strong>Taille à prévoir</strong><br><span class="meta">${lastTaille(b.id) ? 'Dernière : ' + fmtDate(lastTaille(b.id)) : 'Aucune taille notée'}</span></span></label>
@@ -419,9 +495,27 @@ $('acctBtn').onclick = () => {
       <p class="meta">${withPhotos} photo${withPhotos > 1 ? 's' : ''} déjà importée${withPhotos > 1 ? 's' : ''}.</p>
       <label class="btn pri">Choisir le fichier .bdbi<input type="file" id="bdbi" hidden></label>
       <div class="progress" id="impBar" hidden><i></i></div><p class="status" id="impMsg"></p>
+      <div class="section-title"><h3>Météo et alertes</h3></div>
+      <p class="meta">Lieu : <strong>${esc(lieu.nom)}</strong>. Alerte quand, dans les 48 h, la température descend sous le seuil (arbres « abri l'hiver » / tous les arbres en pot) ou que les rafales dépassent le seuil (arbres en pot).</p>
+      <div class="foot" style="justify-content:flex-start"><button class="btn" id="geoBtn" type="button">📍 Utiliser ma position</button><button class="btn" id="homeBtn" type="button">Illkirch-Graffenstaden</button></div>
+      <form class="f" id="seuilForm" style="margin-top:12px">
+        <div class="row2"><label class="field"><span>Gel, arbres sensibles (°C)</span><input name="gelSensibles" inputmode="decimal" value="${seuils.gelSensibles}"></label>
+        <label class="field"><span>Gel, tous les pots (°C)</span><input name="gelPots" inputmode="decimal" value="${seuils.gelPots}"></label></div>
+        <label class="field"><span>Rafales (km/h)</span><input name="vent" inputmode="numeric" value="${seuils.vent}"></label>
+        <div class="foot" style="justify-content:flex-start"><button class="btn pri" type="submit">Enregistrer les seuils</button></div>
+      </form>
+      <p class="meta" style="margin-top:12px">Pastille sur l'icône : nombre de bonsaïs en alerte. ${'setAppBadge' in navigator ? '' : 'Non prise en charge par ce navigateur.'}</p>
+      ${'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn" id="notifBtn" type="button">Autoriser la pastille sur l\'icône</button>' : ''}
       <div class="section-title"><h3>Session</h3></div>
       <button class="btn danger" id="logout">Se déconnecter</button>
     </div>`);
+  $('geoBtn').onclick = async e => { e.target.disabled = true; const ok = await utiliserMaPosition(); e.target.disabled = false; toast(ok ? 'Météo de votre position' : 'Position refusée ou indisponible'); $('acctBtn').click(); };
+  $('homeBtn').onclick = async () => { lieu = DEF_LIEU; lss('bz-lieu', lieu); await chargerMeteo(true); render(); toast('Météo d\'Illkirch-Graffenstaden'); $('acctBtn').click(); };
+  $('seuilForm').onsubmit = e => { e.preventDefault(); const fd = new FormData(e.target), n = v => Number(String(v).replace(',', '.'));
+    const s = { gelSensibles: n(fd.get('gelSensibles')), gelPots: n(fd.get('gelPots')), vent: n(fd.get('vent')) };
+    if (Object.values(s).some(v => !Number.isFinite(v))) { toast('Valeurs invalides'); return; }
+    seuils = s; lss('bz-seuils', s); peindreMeteo(); render(); toast('Seuils enregistrés'); };
+  $('notifBtn')?.addEventListener('click', async () => { const p = await Notification.requestPermission(); pastille(); toast(p === 'granted' ? 'Pastille activée' : 'Autorisation refusée'); $('acctBtn').click(); });
   $('logout').onclick = async () => { await sb.auth.signOut(); localStorage.removeItem(CACHE); location.reload(); };
   $('bdbi').onchange = e => e.target.files[0] && importAlbum(e.target.files[0]);
 };
@@ -525,9 +619,11 @@ function start(session) {
   const c = lsg(CACHE, null);
   if (c && c.uid === me.id) { B = c.B || []; T = c.T || []; P = c.P || []; render(); }
   else render();
+  chargerMeteo().then(render);
   load().then(() => { const id = location.hash.slice(1); if (id && B.some(b => b.id === id) && !openId) openDetail(id); });
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && me) load(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && me) { load(); chargerMeteo().then(render); } });
+$('meteo').addEventListener('click', e => { if (e.target.closest('[data-f=alerte]')) { filter = 'alerte'; render(); } });
 sb.auth.onAuthStateChange((ev, session) => {
   if (ev === 'PASSWORD_RECOVERY') { mode = 'newpw'; showLogin('Choisissez votre nouveau mot de passe.'); return; }
   if (ev === 'SIGNED_IN' && session) start(session);
