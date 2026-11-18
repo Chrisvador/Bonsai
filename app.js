@@ -548,7 +548,15 @@ $('acctBtn').onclick = () => {
   etatPush();
   $('pushOn').onclick = async e => { e.target.disabled = true; try { await activerPush(); toast('Notifications activées'); } catch (x) { toast(x.message || String(x), 5000); } e.target.disabled = false; etatPush(); };
   $('pushOff').onclick = async () => { await desactiverPush().catch(() => {}); toast('Notifications désactivées'); etatPush(); };
-  $('pushTest').onclick = async e => { e.target.disabled = true; try { await testerPush(); toast('Notification envoyée'); } catch (x) { toast('Échec : ' + (x.message || x), 5000); } e.target.disabled = false; };
+  $('pushTest').onclick = async e => {
+    const btn = e.target, etat = $('pushEtat'); btn.disabled = true; btn.textContent = 'Envoi…';
+    try {
+      const j = await testerPush(), mine = (j.rapport || []).map(r => r.test || '');
+      const ok = mine.filter(r => r === 'ok').length, ko = mine.filter(r => r.startsWith('échec'));
+      etat.textContent = ok ? `✅ Notification envoyée à ${ok} appareil${ok > 1 ? 's' : ''} (${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}). Elle s'affiche dans le centre de notifications ; app ouverte, iPadOS n'affiche souvent pas de bannière.`
+        : ko.length ? '❌ ' + ko[0] : '❌ Aucun appareil abonné : désactivez puis réactivez les notifications.';
+    } catch (x) { etat.textContent = '❌ Échec : ' + (x.message || x); }
+    btn.disabled = false; btn.textContent = 'Envoyer un test'; };
   $('logout').onclick = async () => { await sb.auth.signOut(); localStorage.removeItem(CACHE); location.reload(); };
   $('bdbi').onchange = e => e.target.files[0] && importAlbum(e.target.files[0]);
 };
@@ -665,5 +673,6 @@ sb.auth.onAuthStateChange((ev, session) => {
 });
 sb.auth.getSession().then(({ data }) => { if (data.session) start(data.session); else if (mode !== 'newpw') showLogin(); });
 
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'push') { toast('🔔 ' + (e.data.body || e.data.title), 6000); if (me) chargerMeteo(true).then(render); } });
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 })();

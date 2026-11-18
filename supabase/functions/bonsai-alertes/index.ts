@@ -72,7 +72,9 @@ async function envoyer(sub: any, payload: unknown) {
   try { await s.pushTextMessage(JSON.stringify(payload), { urgency: webpush.Urgency.High, ttl: 6 * 3600 }); return "ok"; }
   catch (e) {
     if (e instanceof webpush.PushMessageError && (e.isGone() || e.response.status === 404)) { await db.from("bonsai_push").delete().eq("id", sub.id); return "supprimé"; }
-    return "échec " + String(e);
+    const detail = e instanceof webpush.PushMessageError ? `${e.response.status} ${await e.response.text().catch(() => "")}` : String(e);
+    console.error("push", sub.endpoint.slice(0, 40), detail);
+    return "échec " + detail;
   }
 }
 
@@ -82,7 +84,8 @@ Deno.serve(async (req) => {
     const { data: cfg } = await db.from("bonsai_config").select("v").eq("k", "cron_secret").single();
     const cron = req.headers.get("x-cron-secret");
     let owner: string | null = null, test = false;
-    if (cron) { if (!cfg || cron !== cfg.v) return json({ erreur: "secret invalide" }, 401); }
+    if (cron) { if (!cfg || cron !== cfg.v) return json({ erreur: "secret invalide" }, 401);
+      const body = await req.json().catch(() => ({})); if (body && body.test) test = true; }
     else {
       const jwt = (req.headers.get("authorization") || "").replace(/^Bearer /i, "");
       const { data: u, error } = await db.auth.getUser(jwt);
