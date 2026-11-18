@@ -145,9 +145,34 @@ async function utiliserMaPosition() {
     if (!navigator.geolocation) return res(false);
     navigator.geolocation.getCurrentPosition(async p => {
       lieu = { lat: +p.coords.latitude.toFixed(3), lon: +p.coords.longitude.toFixed(3), nom: 'Ma position' };
-      lss('bz-lieu', lieu); await chargerMeteo(true); render(); res(true);
+      lss('bz-lieu', lieu); await chargerMeteo(true); render(); enregistrerAbonnement().catch(() => {}); res(true);
     }, () => res(false), { timeout: 15000, maximumAge: 3600e3 });
   });
+}
+
+/* ---------- notifications push (service Supabase « bonsai-alertes », toutes les 3 h) ---------- */
+const VAPID = 'BOndYyumBggupXVMirLxvt9iziS1T3odbHOSMFMsdLniVULBl8STXEhzgQbbrByHDvoeqffbdJ9BcXwrqbDYtD8';
+const b64u = s => { const p = '='.repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+const pushDispo = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+async function abonnementActuel() { if (!pushDispo()) return null; const reg = await navigator.serviceWorker.ready; return reg.pushManager.getSubscription(); }
+async function activerPush() {
+  if (!pushDispo()) throw new Error(/iPad|iPhone|Macintosh/.test(navigator.userAgent) && !navigator.standalone ? "Ouvrez l'app depuis son icône sur l'écran d'accueil, pas dans Safari." : 'Notifications non prises en charge par ce navigateur.');
+  const perm = await Notification.requestPermission(); if (perm !== 'granted') throw new Error('Notifications refusées. Réglages → Notifications → Bonsaïs pour les autoriser.');
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID) });
+  await enregistrerAbonnement(sub);
+}
+async function enregistrerAbonnement(sub) {
+  sub = sub || await abonnementActuel(); if (!sub || !me) return;
+  const j = sub.toJSON();
+  const { error } = await sb.from('bonsai_push').upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, lat: lieu.lat, lon: lieu.lon, lieu: lieu.nom, seuils, owner_id: me.id }, { onConflict: 'endpoint' });
+  if (error) throw error;
+}
+async function desactiverPush() { const sub = await abonnementActuel(); if (!sub) return; await sb.from('bonsai_push').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); }
+async function testerPush() {
+  const { data: { session } } = await sb.auth.getSession();
+  const r = await fetch(SB_URL + '/functions/v1/bonsai-alertes', { method: 'POST', headers: { Authorization: 'Bearer ' + session.access_token, apikey: SB_KEY, 'Content-Type': 'application/json' }, body: '{}' });
+  const j = await r.json(); if (!r.ok) throw new Error(j.erreur || r.status); return j;
 }
 
 /* ---------- liste ---------- */
@@ -504,18 +529,26 @@ $('acctBtn').onclick = () => {
         <label class="field"><span>Rafales (km/h)</span><input name="vent" inputmode="numeric" value="${seuils.vent}"></label>
         <div class="foot" style="justify-content:flex-start"><button class="btn pri" type="submit">Enregistrer les seuils</button></div>
       </form>
-      <p class="meta" style="margin-top:12px">Pastille sur l'icône : nombre de bonsaïs en alerte. ${'setAppBadge' in navigator ? '' : 'Non prise en charge par ce navigateur.'}</p>
-      ${'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn" id="notifBtn" type="button">Autoriser la pastille sur l\'icône</button>' : ''}
+      <div class="section-title"><h3>Notifications</h3></div>
+      <p class="meta">Le service vérifie la météo toutes les 3 h et vous prévient quand un gel ou un coup de vent menace des bonsaïs, même app fermée ; la pastille de l'icône affiche le nombre d'arbres concernés. Sur iPad, l'app doit être ouverte depuis son icône d'écran d'accueil.</p>
+      <p class="status" id="pushEtat">Vérification…</p>
+      <div class="foot" style="justify-content:flex-start"><button class="btn pri" id="pushOn" type="button" hidden>🔔 Activer les notifications</button><button class="btn" id="pushTest" type="button" hidden>Envoyer un test</button><button class="btn danger" id="pushOff" type="button" hidden>Désactiver sur cet appareil</button></div>
       <div class="section-title"><h3>Session</h3></div>
       <button class="btn danger" id="logout">Se déconnecter</button>
     </div>`);
   $('geoBtn').onclick = async e => { e.target.disabled = true; const ok = await utiliserMaPosition(); e.target.disabled = false; toast(ok ? 'Météo de votre position' : 'Position refusée ou indisponible'); $('acctBtn').click(); };
-  $('homeBtn').onclick = async () => { lieu = DEF_LIEU; lss('bz-lieu', lieu); await chargerMeteo(true); render(); toast('Météo d\'Illkirch-Graffenstaden'); $('acctBtn').click(); };
+  $('homeBtn').onclick = async () => { lieu = DEF_LIEU; lss('bz-lieu', lieu); enregistrerAbonnement().catch(() => {}); await chargerMeteo(true); render(); toast('Météo d\'Illkirch-Graffenstaden'); $('acctBtn').click(); };
   $('seuilForm').onsubmit = e => { e.preventDefault(); const fd = new FormData(e.target), n = v => Number(String(v).replace(',', '.'));
     const s = { gelSensibles: n(fd.get('gelSensibles')), gelPots: n(fd.get('gelPots')), vent: n(fd.get('vent')) };
     if (Object.values(s).some(v => !Number.isFinite(v))) { toast('Valeurs invalides'); return; }
-    seuils = s; lss('bz-seuils', s); peindreMeteo(); render(); toast('Seuils enregistrés'); };
-  $('notifBtn')?.addEventListener('click', async () => { const p = await Notification.requestPermission(); pastille(); toast(p === 'granted' ? 'Pastille activée' : 'Autorisation refusée'); $('acctBtn').click(); });
+    seuils = s; lss('bz-seuils', s); peindreMeteo(); render(); enregistrerAbonnement().catch(() => {}); toast('Seuils enregistrés'); };
+  const etatPush = async () => { const sub = await abonnementActuel().catch(() => null); const on = !!sub && Notification.permission === 'granted';
+    $('pushEtat').textContent = !pushDispo() ? (/iPad|iPhone|Macintosh/.test(navigator.userAgent) && !navigator.standalone ? "Indisponible dans Safari : ajoutez l'app à l'écran d'accueil (Partager → Sur l'écran d'accueil) puis ouvrez-la depuis son icône." : 'Notifications non prises en charge par ce navigateur.') : on ? '✅ Notifications actives sur cet appareil.' : 'Notifications désactivées sur cet appareil.';
+    $('pushOn').hidden = !pushDispo() || on; $('pushTest').hidden = !on; $('pushOff').hidden = !on; };
+  etatPush();
+  $('pushOn').onclick = async e => { e.target.disabled = true; try { await activerPush(); toast('Notifications activées'); } catch (x) { toast(x.message || String(x), 5000); } e.target.disabled = false; etatPush(); };
+  $('pushOff').onclick = async () => { await desactiverPush().catch(() => {}); toast('Notifications désactivées'); etatPush(); };
+  $('pushTest').onclick = async e => { e.target.disabled = true; try { await testerPush(); toast('Notification envoyée'); } catch (x) { toast('Échec : ' + (x.message || x), 5000); } e.target.disabled = false; };
   $('logout').onclick = async () => { await sb.auth.signOut(); localStorage.removeItem(CACHE); location.reload(); };
   $('bdbi').onchange = e => e.target.files[0] && importAlbum(e.target.files[0]);
 };
@@ -619,7 +652,9 @@ function start(session) {
   const c = lsg(CACHE, null);
   if (c && c.uid === me.id) { B = c.B || []; T = c.T || []; P = c.P || []; render(); }
   else render();
+  if (location.hash === '#alerte') { filter = 'alerte'; history.replaceState(null, '', location.pathname); }
   chargerMeteo().then(render);
+  enregistrerAbonnement().catch(() => {});
   load().then(() => { const id = location.hash.slice(1); if (id && B.some(b => b.id === id) && !openId) openDetail(id); });
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && me) { load(); chargerMeteo().then(render); } });
