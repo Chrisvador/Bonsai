@@ -214,8 +214,8 @@ function render() {
 }
 
 /* ---------- fiche ---------- */
-function openSheet(html) { const s = $('sheet'); s.innerHTML = `<div class="panel" role="dialog" aria-modal="true">${html}</div>`; s.hidden = false; document.body.style.overflow = 'hidden'; }
-function closeSheet() { $('sheet').hidden = true; $('sheet').innerHTML = ''; document.body.style.overflow = ''; openId = null; if (location.hash) history.replaceState(null, '', location.pathname + location.search); }
+function openSheet(html) { const s = $('sheet'); s.innerHTML = `<div class="panel" role="dialog" aria-modal="true">${html}</div>`; s.hidden = false; document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden'; }
+function closeSheet() { $('sheet').hidden = true; $('sheet').innerHTML = ''; document.documentElement.style.overflow = ''; document.body.style.overflow = ''; openId = null; if (location.hash) history.replaceState(null, '', location.pathname + location.search); }
 let tFilter = 'tous';
 async function openDetail(id) { openId = id; tFilter = 'tous'; if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id); renderDetail(); }
 async function renderDetail() {
@@ -256,16 +256,17 @@ async function renderDetail() {
       <div class="seg" role="group" aria-label="Filtrer les travaux">
         ${['tous', 'rempotage', 'taille', 'autre'].map(k => `<button type="button" data-tf="${k}" aria-pressed="${tFilter === k}">${k === 'tous' ? 'Tous' : TYPES[k]} ${cnt(k)}</button>`).join('')}
       </div>
-      <ul class="timeline">${hist.length ? hist.map(t => {
-        if (t.photosOnly) return `<li><span class="tag photo">Photos</span>
-          <div><div class="when">${fmtDate(t.date)}</div>${t.caps ? `<div class="note">${esc(t.caps)}</div>` : ''}
-          <div class="thumbs">${t.ps.map(p => `<img src="${esc(url(thumbPath(p.chemin)))}" alt="" data-photo="${p.id}" loading="lazy">`).join('')}</div></div><span></span></li>`;
-        const tp = P.filter(p => p.travail_id === t.id);
-        return `<li><span class="tag ${t.type}">${TYPES[t.type]}</span>
-          <div><div class="when">${fmtDate(t.date)}</div>${t.note ? `<div class="note">${esc(t.note)}</div>` : ''}
-          ${tp.length ? `<div class="thumbs">${tp.map(p => `<img src="${esc(url(thumbPath(p.chemin)))}" alt="" data-photo="${p.id}" loading="lazy">`).join('')}</div>` : ''}</div>
-          <button class="iconbtn" data-work="${t.id}" aria-label="Modifier ce travail">✎</button></li>`;
-      }).join('') : '<li><span></span><div class="meta">Rien pour l\'instant.</div><span></span></li>'}</ul>
+      <div class="hgrid">${hist.length ? hist.map(t => {
+        const ph = t.photosOnly ? t.ps : P.filter(p => p.travail_id === t.id);
+        const type = t.photosOnly ? 'photo' : t.type, lib = t.photosOnly ? 'Photos' : TYPES[t.type], note = t.photosOnly ? t.caps : t.note;
+        const ico = { rempotage: '🪴', taille: '✂️', autre: '📝', photo: '📷' }[type];
+        return `<article class="hcard ${type}">
+          ${ph.length ? `<button type="button" class="hph" data-photo="${ph[0].id}" aria-label="Voir la photo"><img src="${esc(url(thumbPath(ph[0].chemin)))}" alt="" loading="lazy">${ph.length > 1 ? `<span class="more">+${ph.length - 1}</span>` : ''}</button>`
+            : `<div class="hph vide" aria-hidden="true">${ico}</div>`}
+          <div class="hb"><div class="hrow"><span class="tag ${type}">${lib}</span>${t.photosOnly ? '' : `<button class="iconbtn" data-work="${t.id}" aria-label="Modifier ce travail">✎</button>`}</div>
+            <div class="when">${fmtDate(t.date)}</div>${note ? `<div class="note">${esc(note)}</div>` : ''}</div>
+        </article>`;
+      }).join('') : '<p class="meta">Rien pour l\'instant.</p>'}</div>
 
       <div class="section-title"><h3>Photos · ${ps.length}</h3>
         <label class="btn">+ Photos<input type="file" accept="image/*" multiple hidden data-act="addphotos"></label></div>
