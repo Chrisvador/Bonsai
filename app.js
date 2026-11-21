@@ -226,9 +226,9 @@ async function renderDetail() {
   const hist = tr.slice();
   if (tFilter === 'tous') {           // photos sans travail associé : regroupées par date dans l'historique
     const g = {};
-    ps.filter(p => !p.travail_id && p.date).forEach(p => { (g[p.date] = g[p.date] || []).push(p); });
+    ps.filter(p => !p.travail_id).forEach(p => { const k = p.date || ''; (g[k] = g[k] || []).push(p); });
     Object.entries(g).forEach(([date, arr]) => hist.push({ photosOnly: true, date, ps: arr, caps: [...new Set(arr.map(p => p.legende).filter(Boolean))].join(' · ') }));
-    hist.sort((a, c) => c.date.localeCompare(a.date));
+    hist.sort((a, c) => (c.date || '0').localeCompare(a.date || '0'));   // photos sans date en dernier
   }
   const scrolled = $('sheet').querySelector('.panel')?.scrollTop || 0;
   const age = b.age_acquisition != null ? `${ans(b.age_acquisition)} à l'acquisition · ≈ ${ans(b.age_acquisition + yearsSince(b.date_acquisition))} aujourd'hui` : 'Non renseigné';
@@ -252,7 +252,10 @@ async function renderDetail() {
         ${b.espece ? `<div class="fact"><span>Espèce</span><strong>${esc(b.espece)}</strong></div>` : ''}
       </div>
 
-      <div class="section-title"><h3>Historique</h3><button class="btn pri" data-act="addwork">+ Travail</button></div>
+      <div class="section-title"><h3>Historique</h3>
+        <label class="btn">+ Photos<input type="file" accept="image/*" multiple hidden data-act="addphotos"></label>
+        <button class="btn pri" data-act="addwork">+ Travail</button></div>
+      <p class="status" id="upStatus"></p>
       <div class="seg" role="group" aria-label="Filtrer les travaux">
         ${['tous', 'rempotage', 'taille', 'autre'].map(k => `<button type="button" data-tf="${k}" aria-pressed="${tFilter === k}">${k === 'tous' ? 'Tous' : TYPES[k]} ${cnt(k)}</button>`).join('')}
       </div>
@@ -264,14 +267,9 @@ async function renderDetail() {
           ${ph.length ? `<button type="button" class="hph" data-photo="${ph[0].id}" aria-label="Voir la photo"><img src="${esc(url(thumbPath(ph[0].chemin)))}" alt="" loading="lazy">${ph.length > 1 ? `<span class="more">+${ph.length - 1}</span>` : ''}</button>`
             : `<div class="hph vide" aria-hidden="true">${ico}</div>`}
           <div class="hb"><div class="hrow"><span class="tag ${type}">${lib}</span>${t.photosOnly ? '' : `<button class="iconbtn" data-work="${t.id}" aria-label="Modifier ce travail">✎</button>`}</div>
-            <div class="when">${fmtDate(t.date)}</div>${note ? `<div class="note">${esc(note)}</div>` : ''}</div>
+            <div class="when">${t.date ? fmtDate(t.date) : 'Sans date'}</div>${note ? `<div class="note">${esc(note)}</div>` : ''}</div>
         </article>`;
       }).join('') : '<p class="meta">Rien pour l\'instant.</p>'}</div>
-
-      <div class="section-title"><h3>Photos · ${ps.length}</h3>
-        <label class="btn">+ Photos<input type="file" accept="image/*" multiple hidden data-act="addphotos"></label></div>
-      ${ps.length ? `<div class="gallery">${ps.map(p => `<button type="button" data-photo="${p.id}" aria-label="${esc(p.legende || 'Photo')} ${p.date ? fmtDate(p.date) : ''}"><img src="${esc(url(thumbPath(p.chemin)))}" alt="" loading="lazy">${main && p.id === main.id ? '<span class="star">Principale</span>' : ''}</button>`).join('')}</div>` : '<p class="meta">Aucune photo. Ajoutez-en depuis la photothèque.</p>'}
-      <p class="status" id="upStatus"></p>
 
       ${b.notes ? `<div class="section-title"><h3>Notes</h3></div><div class="notes">${esc(b.notes)}</div>` : ''}
     </div>`);
